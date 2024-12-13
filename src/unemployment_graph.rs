@@ -13,7 +13,7 @@ pub fn read_unemployment_csv(file_path: &str) -> Result<Vec<(String, f64)>, Box<
     for (index, line) in reader.lines().enumerate() {
         let line = line?;
         if index == 0 {
-            continue; // Skip header
+            continue;
         }
 
         let parts: Vec<&str> = line.split(',').collect();
@@ -30,7 +30,7 @@ pub fn read_unemployment_csv(file_path: &str) -> Result<Vec<(String, f64)>, Box<
     Ok(data)
 }
 
-pub fn visualize_unemployment_tourism(
+pub fn visualize_unemployment_graph(
     tourism_data: Vec<(String, f64)>,
     unemployment_data: Vec<(String, f64)>,
     threshold: f64,
@@ -50,7 +50,6 @@ pub fn visualize_unemployment_tourism(
         })
         .collect();
 
-    // Normalize the ratios for better scaling
     let min_ratio = combined_data
         .iter()
         .map(|(_, r)| *r)
@@ -65,7 +64,6 @@ pub fn visualize_unemployment_tourism(
         .map(|(country, ratio)| (country.clone(), (ratio - min_ratio) / (max_ratio - min_ratio)))
         .collect();
 
-    // Generate positions for nodes using a circular layout
     let positions: Vec<(i32, i32)> = (0..scaled_data.len())
         .map(|i| {
             let angle = 2.0 * std::f64::consts::PI * (i as f64) / (scaled_data.len() as f64);
@@ -75,7 +73,6 @@ pub fn visualize_unemployment_tourism(
         })
         .collect();
 
-    // Prepare Plotters backend
     let root = BitMapBackend::new(output_file, (1000, 1000)).into_drawing_area();
     root.fill(&WHITE)?;
 
@@ -87,9 +84,8 @@ pub fn visualize_unemployment_tourism(
 
     chart.configure_mesh().disable_mesh().draw()?;
 
-    // Draw nodes
     for (pos, (country, scaled_ratio)) in positions.iter().zip(scaled_data.iter()) {
-        let size = ((scaled_ratio * 20.0) as i32).clamp(5, 20); // Adjusted size range
+        let size = ((scaled_ratio * 20.0) as i32).clamp(5, 20);
         chart.draw_series(std::iter::once(Circle::new(
             *pos,
             size,
@@ -102,7 +98,6 @@ pub fn visualize_unemployment_tourism(
         )))?;
     }
 
-    // Draw edges
     for i in 0..scaled_data.len() {
         for j in (i + 1)..scaled_data.len() {
             if (scaled_data[i].1 - scaled_data[j].1).abs() <= threshold {
@@ -120,7 +115,6 @@ pub fn visualize_unemployment_tourism(
         }
     }
 
-    // Add legend
     chart.draw_series(std::iter::once(Text::new(
         "Node size: Tourism-to-Unemployment ratio\nEdge thickness: Similarity",
         (-200, 220),

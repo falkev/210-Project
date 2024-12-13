@@ -45,7 +45,6 @@ pub fn visualize_graph(
         })
         .collect();
 
-    // Prepare Plotters backend
     let root = BitMapBackend::new(output_file, (1000, 1000)).into_drawing_area();
     root.fill(&WHITE)?;
 
@@ -57,7 +56,6 @@ pub fn visualize_graph(
 
     chart.configure_mesh().disable_mesh().draw()?;
 
-    // Draw nodes
     for (pos, (country, revenue)) in positions.iter().zip(data.iter()) {
         let size = (revenue / 10.0) as i32;
         chart.draw_series(std::iter::once(Circle::new(
@@ -72,7 +70,6 @@ pub fn visualize_graph(
         )))?;
     }
 
-    // Draw edges
     for i in 0..data.len() {
         for j in (i + 1)..data.len() {
             if (data[i].1 - data[j].1).abs() <= threshold {
