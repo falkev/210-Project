@@ -1,21 +1,19 @@
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::collections::HashMap;
 use plotters::prelude::*;
-
-
 
 pub fn read_tourism_gdp_csv(file_path: &str) -> Result<Vec<(String, f64)>, Box<dyn Error>> {
     let file = File::open(file_path)?;
-    let reader = BufReader::new(file); 
+    let reader = BufReader::new(file);
 
     let mut data = Vec::new();
 
     for (index, line) in reader.lines().enumerate() {
         let line = line?;
         if index == 0 {
-            continue;
+            continue; // Skip header
         }
 
         let parts: Vec<&str> = line.split(',').collect();
@@ -38,22 +36,39 @@ pub fn visualize_tourism_gdp(
     threshold: f64,
     output_file: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let mut graph = petgraph::graph::UnGraph::<String, ()>::new_undirected();
-    let mut nodes: Vec<(String, f64)> = vec![];
-
-    // Merge tourism and GDP data
     let gdp_map: HashMap<_, _> = gdp_data.into_iter().collect();
     let combined_data: Vec<(String, f64)> = tourism_data
         .into_iter()
         .filter_map(|(country, tourism)| {
-            gdp_map.get(&country).map(|&gdp| (country, tourism / gdp))
+            gdp_map.get(&country).and_then(|&gdp| {
+                if gdp > 0.0 && tourism > 0.0 {
+                    Some((country, tourism / gdp))
+                } else {
+                    None
+                }
+            })
         })
         .collect();
 
+    // Normalize the ratios for better scaling
+    let min_ratio = combined_data
+        .iter()
+        .map(|(_, r)| *r)
+        .fold(f64::INFINITY, f64::min);
+    let max_ratio = combined_data
+        .iter()
+        .map(|(_, r)| *r)
+        .fold(f64::NEG_INFINITY, f64::max);
+
+    let scaled_data: Vec<(String, f64)> = combined_data
+        .iter()
+        .map(|(country, ratio)| (country.clone(), (ratio - min_ratio) / (max_ratio - min_ratio)))
+        .collect();
+
     // Generate positions for nodes using a circular layout
-    let positions: Vec<(i32, i32)> = (0..combined_data.len())
+    let positions: Vec<(i32, i32)> = (0..scaled_data.len())
         .map(|i| {
-            let angle = 2.0 * std::f64::consts::PI * (i as f64) / (combined_data.len() as f64);
+            let angle = 2.0 * std::f64::consts::PI * (i as f64) / (scaled_data.len() as f64);
             let x = (angle.cos() * 200.0) as i32;
             let y = (angle.sin() * 200.0) as i32;
             (x, y)
@@ -73,33 +88,46 @@ pub fn visualize_tourism_gdp(
     chart.configure_mesh().disable_mesh().draw()?;
 
     // Draw nodes
-    for (pos, (country, ratio)) in positions.iter().zip(combined_data.iter()) {
-        let size = (ratio * 10.0) as i32;
+    for (pos, (country, scaled_ratio)) in positions.iter().zip(scaled_data.iter()) {
+        let size = ((scaled_ratio * 20.0) as i32).clamp(5, 20); // Adjusted size range
         chart.draw_series(std::iter::once(Circle::new(
             *pos,
-            size.clamp(5, 15),
+            size,
             RED.filled(),
         )))?;
         chart.draw_series(std::iter::once(Text::new(
-            format!("{} ({:.2})", country, ratio),
+            format!("{} ({:.2})", country, scaled_ratio),
             *pos,
             ("sans-serif", 12),
         )))?;
     }
 
     // Draw edges
-    for i in 0..combined_data.len() {
-        for j in (i + 1)..combined_data.len() {
-            if (combined_data[i].1 - combined_data[j].1).abs() <= threshold {
+    for i in 0..scaled_data.len() {
+        for j in (i + 1)..scaled_data.len() {
+            if (scaled_data[i].1 - scaled_data[j].1).abs() <= threshold {
+                let edge_weight = 1.0 - (scaled_data[i].1 - scaled_data[j].1).abs();
+                let edge_color = BLACK.mix(edge_weight as f64);
                 chart.draw_series(std::iter::once(PathElement::new(
                     vec![positions[i], positions[j]],
-                    &BLACK,
+                    ShapeStyle {
+                        color: edge_color,
+                        filled: false,
+                        stroke_width: (2.0 * edge_weight) as u32,
+                    },
                 )))?;
             }
         }
     }
 
-    root.present()?; 
+    // Add legend
+    chart.draw_series(std::iter::once(Text::new(
+        "Node size: Tourism-to-GDP ratio\nEdge thickness: Similarity",
+        (-200, 220),
+        ("sans-serif", 12),
+    )))?;
+
+    root.present()?;
 
     Ok(())
 }
